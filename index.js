@@ -1,3 +1,6 @@
+(function(){
+"use strict";
+
 try {
     // node.js versions < 0.5.5
     var cc = new require('./build/default/bigint');
@@ -5,13 +8,15 @@ try {
     // node.js versions >= 0.5.5
     var cc = new require('./build/Release/bigint');
 }
-var BigInt = cc.BigInt;
 
+var BigInt = cc.BigInt;
 module.exports = BigInt;
 
 BigInt.conditionArgs = function(num, base) {
-    if (typeof num !== 'string') num = num.toString(base || 10);
-    
+    if (typeof num !== 'string') {
+        num = num.toString(base || 10);
+    }
+
     if (num.match(/e\+/)) { // positive exponent
         if (!Number(num).toString().match(/e\+/)) {
         return {
@@ -25,7 +30,7 @@ BigInt.conditionArgs = function(num, base) {
             .replace(/^0/,'');
         var i = n.length - n.indexOf('.');
         n = n.replace(/\./,'');
-        
+
         for (; i <= pow; i++) n += '0';
            return {
                num : n,
@@ -57,35 +62,40 @@ BigInt.prototype.toNumber = function () {
     return parseInt(this.toString(), 10);
 };
 
-[ 'add', 'sub', 'mul', 'div', 'mod' ].forEach(function (op) {
+function polyOp(op) {
     BigInt.prototype[op] = function (num) {
         if (num instanceof BigInt) {
             return this['b'+op](num);
         }
-        else if (typeof num === 'number') {
-            if (num >= 0) {
-                return this['u'+op](num);
-            }
-            else if (op === 'add') {
-                return this.usub(-num);
-            }
-            else if (op === 'sub') {
-                return this.uadd(-num);
-            }
-            else {
-                var x = BigInt(num);
-                return this['b'+op](x);
-            }
-        }
-        else if (typeof num === 'string') {
-            var x = BigInt(num);
+
+        if (typeof num === 'string') {
+            var x = new BigInt(num);
             return this['b'+op](x);
         }
-        else {
-            throw new TypeError('Unspecified operation for type '
-                + (typeof num) + ' for ' + op);
+
+        if (typeof num !== 'number') {
+            var message = 'Unspecified operation for type ' + (typeof num) + ' for ' + op;
+            throw new TypeError(message);
         }
+
+        if (num >= 0) {
+            return this['u'+op](num);
+        }
+
+        if (op === 'add') {
+            return this.usub(-num);
+        }
+
+        if (op === 'sub') {
+            return this.uadd(-num);
+        }
+
+         return this['b'+op]( new BigInt(num) );
     };
+}
+
+[ 'add', 'sub', 'mul', 'div', 'mod' ].forEach(function (op) {
+    polyOp(op);
 });
 
 BigInt.prototype.abs = function () {
@@ -100,17 +110,17 @@ BigInt.prototype.powm = function (num, mod) {
     var m, res;
 
     if ((typeof mod) === 'number' || (typeof mod) === 'string') {
-        m = BigInt(mod);
+        m = new BigInt(mod);
     }
     else if (mod instanceof BigInt) {
         m = mod;
     }
-    
+
     if ((typeof num) === 'number') {
         return this.upowm(num, m);
     }
     else if ((typeof num) === 'string') {
-        var n = BigInt(num);
+        var n = new BigInt(num);
         return this.bpowm(n, m);
     }
     else if (num instanceof BigInt) {
@@ -120,14 +130,14 @@ BigInt.prototype.powm = function (num, mod) {
 
 BigInt.prototype.mod = function (num, mod) {
     var m, res;
-    
+
     if ((typeof mod) === 'number' || (typeof mod) === 'string') {
-        m = BigInt(mod);
+        m = new BigInt(mod);
     }
     else if (mod instanceof BigInt) {
         m = mod;
     }
-    
+
     if ((typeof num) === 'number') {
         return this.umod(num, m);
     }
@@ -257,16 +267,14 @@ BigInt.prototype.root = function(num) {
 BigInt.prototype.rand = function (to) {
     if (to === undefined) {
         if (this.toString() === '1') {
-            return BigInt(0);
+            return new BigInt(0);
         }
         else {
             return this.brand0();
         }
     }
     else {
-        var x = to instanceof BigInt
-            ? to.sub(this)
-            : BigInt(to).sub(this);
+        var x = to instanceof BigInt ? to.sub(this): BigInt(to).sub(this);
         return x.brand0().add(this);
     }
 };
@@ -296,19 +304,19 @@ BigInt.prototype.gcd = function (num) {
 
 BigInt.fromBuffer = function (buf, opts) {
     if (!opts) opts = {};
-    
+
     var endian = { 1 : 'big', '-1' : 'little' }[opts.endian]
         || opts.endian || 'big'
     ;
-    
+
     var size = opts.size || 1;
-    
+
     if (buf.length % size !== 0) {
         throw new RangeError('Buffer length (' + buf.length + ')'
             + ' must be a multiple of size (' + size + ')'
         );
     }
-    
+
     var hex = [];
     for (var i = 0; i < buf.length; i += size) {
         var chunk = [];
@@ -317,7 +325,7 @@ BigInt.fromBuffer = function (buf, opts) {
                 i + (endian === 'big' ? j : (size - j - 1))
             ]);
         }
-        
+
         hex.push(chunk
             .map(function (c) {
                 return (c < 16 ? '0' : '') + c.toString(16);
@@ -325,28 +333,30 @@ BigInt.fromBuffer = function (buf, opts) {
             .join('')
         );
     }
-    
+
     return BigInt(hex.join(''), 16);
 };
 
 BigInt.prototype.toBuffer = function (opts) {
     if (typeof opts === 'string') {
-        if (opts !== 'mpint') return 'Unsupported Buffer representation';
-        
+        if (opts !== 'mpint') {
+            return 'Unsupported Buffer representation';
+        }
+
         var abs = this.abs();
         var buf = abs.toBuffer({ size : 1, endian : 'big' });
         var len = buf.length === 1 && buf[0] === 0 ? 0 : buf.length;
         if (buf[0] & 0x80) len ++;
-        
+
         var ret = new Buffer(4 + len);
         if (len > 0) buf.copy(ret, 4 + (buf[0] & 0x80 ? 1 : 0));
         if (buf[0] & 0x80) ret[4] = 0;
-        
+
         ret[0] = len & (0xff << 24);
         ret[1] = len & (0xff << 16);
         ret[2] = len & (0xff << 8);
         ret[3] = len & (0xff << 0);
-        
+
         // two's compliment for negative integers:
         var isNeg = this.lt(0);
         if (isNeg) {
@@ -355,50 +365,50 @@ BigInt.prototype.toBuffer = function (opts) {
             }
         }
         ret[4] = (ret[4] & 0x7f) | (isNeg ? 0x80 : 0);
-        if (isNeg) ret[ret.length - 1] ++;
-        
+        if (isNeg) {
+            ret[ret.length - 1] ++;
+        }
+
         return ret;
     }
-    
+
     if (!opts) opts = {};
-    
-    var endian = { 1 : 'big', '-1' : 'little' }[opts.endian]
-        || opts.endian || 'big'
-    ;
+
+    var endian = { 1 : 'big', '-1' : 'little' }[opts.endian] || opts.endian || 'big';
     var size = opts.size || 1;
-    
+
     var hex = this.toString(16);
     if (hex.charAt(0) === '-') throw new Error(
         'converting negative numbers to Buffers not supported yet'
     );
-    
+
     var len = Math.ceil(hex.length / (2 * size)) * size;
     var buf = new Buffer(len);
-    
+
     // zero-pad the hex string so the chunks are all `size` long
     while (hex.length < 2 * len) hex = '0' + hex;
-    
+
     var hx = hex
         .split(new RegExp('(.{' + (2 * size) + '})'))
         .filter(function (s) { return s.length > 0 })
     ;
-    
+
     hx.forEach(function (chunk, i) {
         for (var j = 0; j < size; j++) {
             var ix = i * size + (endian === 'big' ? j : size - j - 1);
             buf[ix] = parseInt(chunk.slice(j*2,j*2+2), 16);
         }
     });
-    
+
     return buf;
 };
 
 Object.keys(BigInt.prototype).forEach(function (name) {
     if (name === 'inspect' || name === 'toString') return;
-    
+
     BigInt[name] = function (num) {
         var args = [].slice.call(arguments, 1);
-        
+
         if (num instanceof BigInt) {
             return num[name].apply(num, args);
         }
@@ -408,3 +418,5 @@ Object.keys(BigInt.prototype).forEach(function (name) {
         }
     };
 });
+
+}).call(this);
